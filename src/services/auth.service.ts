@@ -15,6 +15,10 @@ export async function authenticateUser(email: string, password: string) {
     return null;
   }
 
+  if (user.status !== 'ACTIVE') {
+    return null;
+  }
+
   const authUser: AuthUser = {
     id: user.id,
     businessId: user.businessId,

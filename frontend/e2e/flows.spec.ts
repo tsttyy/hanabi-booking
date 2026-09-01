@@ -2,8 +2,96 @@ import { Page, expect, test } from '@playwright/test';
 
 const owner = { email: 'owner@example.com', password: 'Owner@12345' };
 const admin = { email: 'admin@example.com', password: 'Admin@12345' };
+let bookableBusinessId: string | null = null;
+
+async function firstActiveBusinessId(page: Page): Promise<string | null> {
+  if (bookableBusinessId) return bookableBusinessId;
+
+  const suffix = Date.now();
+  const adminEmail = `e2e.booking.admin.${suffix}@example.com`;
+  let response = await page.request.post('/api/auth/login', { data: owner });
+  if (!response.ok()) throw new Error('Unable to authenticate the E2E system owner');
+  response = await page.request.post('/api/businesses', {
+    data: {
+      name: `E2E Bookable Business ${suffix}`,
+      contactEmail: `e2e.booking.${suffix}@example.com`,
+      contactPhone: '+15550000001',
+      timezone: 'UTC',
+      status: 'ACTIVE',
+      adminName: 'E2E Booking Admin',
+      adminEmail,
+      adminPassword: 'Booking@12345',
+    },
+  });
+  if (!response.ok()) throw new Error('Unable to provision the E2E bookable business');
+  const { business } = await response.json();
+
+  response = await page.request.post('/api/auth/login', { data: { email: adminEmail, password: 'Booking@12345' } });
+  if (!response.ok()) throw new Error('Unable to authenticate the E2E business admin');
+  response = await page.request.post('/api/services', {
+    data: { name: 'E2E Booking Service', description: 'Browser booking fixture', durationMinutes: 30, status: 'ACTIVE' },
+  });
+  if (!response.ok()) throw new Error('Unable to create the E2E booking service');
+  response = await page.request.post('/api/availability', {
+    data: { dayOfWeek: 1, startTime: '09:00', endTime: '17:00', status: 'ACTIVE' },
+  });
+  if (!response.ok()) throw new Error('Unable to create E2E booking availability');
+  bookableBusinessId = business.id;
+  return bookableBusinessId;
+}
+
+async function gotoBooking(page: Page) {
+  const businessId = await firstActiveBusinessId(page);
+  if (!businessId) {
+    test.skip();
+    return null;
+  }
+  await page.goto(`/book/${businessId}`);
+  const heading = page.getByRole('heading', { name: /Book with/ });
+  try {
+    await heading.waitFor({ state: 'visible', timeout: 10_000 });
+  } catch {
+    test.skip();
+    return null;
+  }
+  return businessId;
+}
+
+async function completePublicBooking(
+  page: Page,
+  customer: { name: string; email: string; phone: string },
+) {
+  await gotoBooking(page);
+  const serviceButton = page.locator('.choices button').first();
+  await expect(serviceButton).toBeVisible();
+  await serviceButton.click();
+  await page.locator('input[type="date"]').fill(nextBookableDate());
+  const staffSelect = page.getByLabel('Staff');
+  if ((await staffSelect.locator('option').count()) > 1) {
+    await staffSelect.selectOption({ index: 1 });
+  }
+  await page.getByRole('button', { name: 'View available times' }).click();
+  const slot = page.locator('.slots button').first();
+  await expect(slot).toBeVisible({ timeout: 10_000 });
+  await slot.click();
+  await page.getByLabel('Name', { exact: true }).fill(customer.name);
+  await page.getByLabel('Email', { exact: true }).fill(customer.email);
+  await page.getByLabel('Phone', { exact: true }).fill(customer.phone);
+  await page.getByRole('button', { name: 'Review booking' }).click();
+  await page.getByRole('button', { name: 'Confirm booking' }).click();
+  await expect(page.getByRole('heading', { name: 'Booking confirmed' })).toBeVisible({ timeout: 10_000 });
+  return (await page.locator('strong').first().textContent())?.trim() ?? '';
+}
 
 // Test fixture for authenticated pages
+function nextBookableDate() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  const add = (1 + 7 - d.getUTCDay()) % 7 || 7;
+  d.setUTCDate(d.getUTCDate() + add);
+  return d.toISOString().slice(0, 10);
+}
+
 async function loginAs(page: Page, user: { email: string; password: string }) {
   await page.goto('/login');
   await page.getByLabel('Email').fill(user.email);
@@ -92,11 +180,14 @@ test('3.2: system owner can create a new business', async ({ page }) => {
   await expect(page.locator('.card form')).toBeVisible();
   
   const timestamp = Date.now();
-  await page.getByLabel('Name').fill(`Test Business ${timestamp}`);
-  await page.getByLabel('Email').fill(`test${timestamp}@example.com`);
-  await page.getByLabel('Phone').fill('1234567890');
+  await page.getByLabel('Business Name', { exact: true }).fill(`Test Business ${timestamp}`);
+  await page.getByLabel('Business Email', { exact: true }).fill(`test${timestamp}@example.com`);
+  await page.getByLabel('Business Phone', { exact: true }).fill('1234567890');
   await page.getByLabel('Timezone').fill('US/Eastern');
-  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByLabel('Admin Name').fill(`Admin ${timestamp}`);
+  await page.getByLabel('Admin Email').fill(`admin${timestamp}@example.com`);
+  await page.getByLabel('Admin Password').fill('Password@123');
+  await page.getByRole('button', { name: /Create/ }).click();
   
   await expect(page.locator('table')).toBeVisible();
   // Verify the new business appears in the list
@@ -339,9 +430,7 @@ test('7.4: business admin can delete availability', async ({ page }) => {
 
 // ===== 8. PUBLIC BOOKING EXPERIENCE =====
 test('8.1: public booking page loads and shows business info', async ({ page }) => {
-  // Use a known active business (Demo Business or similar)
-  // The demo business should already exist from seed data
-  await page.goto('/book/1'); // Use default business ID
+  await gotoBooking(page);
   
   const heading = page.getByRole('heading', { name: /Book with/ });
   if (await heading.count() === 0) {
@@ -353,7 +442,7 @@ test('8.1: public booking page loads and shows business info', async ({ page }) 
 });
 
 test('8.2: booking flow shows service selection', async ({ page }) => {
-  await page.goto('/book/1');
+  await gotoBooking(page);
   
   const heading = page.getByRole('heading', { name: /Book with/ });
   if (await heading.count() === 0) {
@@ -365,7 +454,7 @@ test('8.2: booking flow shows service selection', async ({ page }) => {
 });
 
 test('8.3: booking flow allows service selection', async ({ page }) => {
-  await page.goto('/book/1');
+  await gotoBooking(page);
   
   const heading = page.getByRole('heading', { name: /Book with/ });
   if (await heading.count() === 0) {
@@ -376,12 +465,12 @@ test('8.3: booking flow allows service selection', async ({ page }) => {
   if (await serviceButton.count() > 0) {
     await serviceButton.click();
     // After selecting service, should see date/time selection
-    await expect(page.getByRole('heading', { name: /Select|Date/ }).or(page.getByLabel('Date'))).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'Select date and staff' })).toBeVisible({ timeout: 5000 });
   }
 });
 
 test('8.4: booking shows correct timezone', async ({ page }) => {
-  await page.goto('/book/1');
+  await gotoBooking(page);
   
   const tzElement = page.locator('small').first();
   if (await tzElement.count() > 0) {
@@ -393,44 +482,103 @@ test('8.4: booking shows correct timezone', async ({ page }) => {
 });
 
 test('8.5: slot display matches 30-minute service', async ({ page }) => {
-  // This test verifies slots are displayed correctly
-  // Assuming Demo Business has a 30-minute service
-  await page.goto('/book/1');
-  
-  const heading = page.getByRole('heading', { name: /Book with/ });
-  if (await heading.count() === 0) {
-    test.skip();
+  await gotoBooking(page);
+  await page.locator('.choices button').first().click();
+  await page.locator('input[type="date"]').fill(nextBookableDate());
+  const staffSelect = page.getByLabel('Staff');
+  if ((await staffSelect.locator('option').count()) > 1) {
+    await staffSelect.selectOption({ index: 1 });
   }
-  
-  // Select first service if available
-  const serviceButton = page.locator('.choices button').first();
-  if (await serviceButton.count() > 0) {
-    await serviceButton.click();
-    
-    // Select a date
-    const dateInput = page.locator('input[type="date"]');
-    if (await dateInput.count() > 0) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().split('T')[0];
-      await dateInput.fill(dateStr);
-      
-      // Wait for slots to load
-      await page.waitForTimeout(1000);
-      
-      // Check slot format - should be HH:MM times
-      const slots = page.locator('.choices button');
-      if (await slots.count() > 0) {
-        const slotText = await slots.first().textContent();
-        // Should match HH:MM format
-        expect(slotText).toMatch(/\d{2}:\d{2}/);
-      }
-    }
-  }
+  await page.getByRole('button', { name: 'View available times' }).click();
+  const slot = page.locator('.slots button').first();
+  await expect(slot).toBeVisible({ timeout: 10_000 });
+  await expect(slot).toHaveText(/\d/);
 });
 
 test('8.6: customer can complete booking with valid details', async ({ page }) => {
-  await page.goto('/book/1');
+  const reference = await completePublicBooking(page, {
+    name: 'John Doe',
+    email: `john${Date.now()}@example.com`,
+    phone: '+14155552671',
+  });
+  expect(reference).toMatch(/^HB-/);
+});
+
+test('8.7: booking confirmation displays booking reference', async ({ page }) => {
+  const reference = await completePublicBooking(page, {
+    name: 'Jane Doe',
+    email: `jane${Date.now()}@example.com`,
+    phone: '+14155552672',
+  });
+  await expect(page.getByText(reference)).toBeVisible();
+  await expect(page.getByText(/Keep this reference/i)).toBeVisible();
+});
+
+// ===== 9. BOOKING LOOKUP =====
+test('9.1: customer can lookup booking with reference and email', async ({ page }) => {
+  const custEmail = `lookup${Date.now()}@example.com`;
+  const bookingRef = await completePublicBooking(page, {
+    name: 'Lookup Test',
+    email: custEmail,
+    phone: '+14155552673',
+  });
+
+  await page.goto('/booking');
+  await page.getByLabel('Booking reference').fill(bookingRef);
+  await page.getByLabel('Email').fill(custEmail);
+  await page.getByRole('button', { name: 'Find booking' }).click();
+  await expect(page.getByText(bookingRef)).toBeVisible();
+});
+
+test('9.2: invalid reference shows error', async ({ page }) => {
+  await page.goto('/booking');
+  await page.getByLabel('Booking reference').fill('INVALID_REF_12345');
+  await page.getByLabel('Email').fill('wrong@example.com');
+  await page.getByRole('button', { name: 'Find booking' }).click();
+  
+  // Should show error message
+  await expect(page.locator('p').filter({ hasText: /not found|error|invalid/i })).toBeVisible({ timeout: 5000 });
+});
+
+// ===== 10. CUSTOMER SELF-CANCELLATION =====
+test('10.1: customer can cancel their own booking', async ({ page }) => {
+  const custEmail = `cancel${Date.now()}@example.com`;
+  const bookingRef = await completePublicBooking(page, {
+    name: 'Cancel Test',
+    email: custEmail,
+    phone: '+14155552674',
+  });
+
+  await page.goto('/booking');
+  await page.getByLabel('Booking reference').fill(bookingRef);
+  await page.getByLabel('Email').fill(custEmail);
+  await page.getByRole('button', { name: 'Find booking' }).click();
+  await expect(page.getByText(bookingRef)).toBeVisible();
+
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('Cancel');
+    await dialog.accept();
+  });
+  await page.getByRole('button', { name: 'Cancel booking' }).click();
+  await expect(page.getByText(/Booking cancelled/i)).toBeVisible({ timeout: 5000 });
+});
+
+test('10.2: cannot cancel with wrong email', async ({ page }) => {
+  const bookingRef = await completePublicBooking(page, {
+    name: 'Wrong Email Test',
+    email: `wrongcancel${Date.now()}@example.com`,
+    phone: '+14155552675',
+  });
+
+  await page.goto('/booking');
+  await page.getByLabel('Booking reference').fill(bookingRef);
+  await page.getByLabel('Email').fill('wrong@example.com');
+  await page.getByRole('button', { name: 'Find booking' }).click();
+  await expect(page.locator('p').filter({ hasText: /not found|error|invalid/i })).toBeVisible({ timeout: 5000 });
+});
+
+test.skip('legacy duplicate 8.6: customer can complete booking with valid details', async ({ page }) => {
+  await gotoBooking(page);
   
   const heading = page.getByRole('heading', { name: /Book with/ });
   if (await heading.count() === 0) {
@@ -445,9 +593,7 @@ test('8.6: customer can complete booking with valid details', async ({ page }) =
     // Select date
     const dateInput = page.locator('input[type="date"]');
     if (await dateInput.count() > 0) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().split('T')[0];
+      const dateStr = nextBookableDate();
       await dateInput.fill(dateStr);
       
       await page.waitForTimeout(1000);
@@ -475,8 +621,8 @@ test('8.6: customer can complete booking with valid details', async ({ page }) =
   }
 });
 
-test('8.7: booking confirmation displays booking reference', async ({ page }) => {
-  await page.goto('/book/1');
+test.skip('legacy duplicate 8.7: booking confirmation displays booking reference', async ({ page }) => {
+  await gotoBooking(page);
   
   const heading = page.getByRole('heading', { name: /Book with/ });
   if (await heading.count() === 0) {
@@ -490,9 +636,7 @@ test('8.7: booking confirmation displays booking reference', async ({ page }) =>
     
     const dateInput = page.locator('input[type="date"]');
     if (await dateInput.count() > 0) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().split('T')[0];
+      const dateStr = nextBookableDate();
       await dateInput.fill(dateStr);
       
       await page.waitForTimeout(1000);
@@ -518,9 +662,9 @@ test('8.7: booking confirmation displays booking reference', async ({ page }) =>
 });
 
 // ===== 9. BOOKING LOOKUP =====
-test('9.1: customer can lookup booking with reference and email', async ({ page }) => {
+test.skip('legacy duplicate 9.1: customer can lookup booking with reference and email', async ({ page }) => {
   // First create a booking
-  await page.goto('/book/1');
+  await gotoBooking(page);
   
   let bookingRef = '';
   let custEmail = '';
@@ -533,9 +677,7 @@ test('9.1: customer can lookup booking with reference and email', async ({ page 
       
       const dateInput = page.locator('input[type="date"]');
       if (await dateInput.count() > 0) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const dateStr = tomorrow.toISOString().split('T')[0];
+        const dateStr = nextBookableDate();
         await dateInput.fill(dateStr);
         
         await page.waitForTimeout(1000);
@@ -577,7 +719,7 @@ test('9.1: customer can lookup booking with reference and email', async ({ page 
   await expect(page.getByText(bookingRef)).toBeVisible();
 });
 
-test('9.2: invalid reference shows error', async ({ page }) => {
+test.skip('legacy duplicate 9.2: invalid reference shows error', async ({ page }) => {
   await page.goto('/booking');
   await page.getByLabel('Booking reference').fill('INVALID_REF_12345');
   await page.getByLabel('Email').fill('wrong@example.com');
@@ -588,9 +730,9 @@ test('9.2: invalid reference shows error', async ({ page }) => {
 });
 
 // ===== 10. CUSTOMER SELF-CANCELLATION =====
-test('10.1: customer can cancel their own booking', async ({ page }) => {
+test.skip('legacy duplicate 10.1: customer can cancel their own booking', async ({ page }) => {
   // Create a booking first
-  await page.goto('/book/1');
+  await gotoBooking(page);
   
   let bookingRef = '';
   let custEmail = '';
@@ -603,9 +745,7 @@ test('10.1: customer can cancel their own booking', async ({ page }) => {
       
       const dateInput = page.locator('input[type="date"]');
       if (await dateInput.count() > 0) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const dateStr = tomorrow.toISOString().split('T')[0];
+        const dateStr = nextBookableDate();
         await dateInput.fill(dateStr);
         
         await page.waitForTimeout(1000);
@@ -660,9 +800,9 @@ test('10.1: customer can cancel their own booking', async ({ page }) => {
   }
 });
 
-test('10.2: cannot cancel with wrong email', async ({ page }) => {
+test.skip('legacy duplicate 10.2: cannot cancel with wrong email', async ({ page }) => {
   // First create a booking
-  await page.goto('/book/1');
+  await gotoBooking(page);
   
   let bookingRef = '';
   
@@ -674,9 +814,7 @@ test('10.2: cannot cancel with wrong email', async ({ page }) => {
       
       const dateInput = page.locator('input[type="date"]');
       if (await dateInput.count() > 0) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const dateStr = tomorrow.toISOString().split('T')[0];
+        const dateStr = nextBookableDate();
         await dateInput.fill(dateStr);
         
         await page.waitForTimeout(1000);
@@ -866,4 +1004,52 @@ test('14.3: validation errors are visible', async ({ page }) => {
   
   // If we get here without errors, the validation might be working server-side
   // or the UI doesn't show inline validation for this case
+});
+
+test('15.1: admin login page points customers to signup and has no public admin signup', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Admin Sign in' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Customer Signup' })).toBeVisible();
+  await expect(page.getByText('Business Admin accounts are provisioned by the System Owner')).toBeVisible();
+  await expect(page.getByRole('link', { name: /create business admin/i })).toHaveCount(0);
+});
+
+test('15.2: customer can sign up and browse businesses', async ({ page }) => {
+  const email = `e2e.customer.${Date.now()}@example.com`;
+  await page.goto('/customer/signup');
+  await page.getByLabel('Full Name').fill('E2E Customer');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill('Password@12345');
+  await page.getByRole('button', { name: 'Sign up' }).click();
+  await expect(page.getByRole('heading', { name: /Welcome/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Find a business to book' }).click();
+  await expect(page.getByRole('heading', { name: 'Browse businesses' })).toBeVisible();
+  const businesses = page.locator('.choices a, .choices button');
+  await expect(businesses.first()).toBeVisible();
+});
+
+test('15.3: customer signup, login, refresh, logout and protected API lifecycle', async ({ page }) => {
+  const email = `e2e.customer.lifecycle.${Date.now()}@example.com`;
+  const password = 'Customer@12345';
+  await page.goto('/customer/signup');
+  await page.getByLabel('Full Name').fill('E2E Lifecycle Customer');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: 'Sign up' }).click();
+  await expect(page.getByRole('heading', { name: /Welcome, E2E Lifecycle Customer/ })).toBeVisible();
+  expect((await page.request.get('/api/customer/auth/me')).status()).toBe(200);
+
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(page.getByRole('heading', { name: 'Customer Sign in' })).toBeVisible();
+  expect((await page.request.get('/api/customer/auth/me')).status()).toBe(401);
+
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: /Welcome, E2E Lifecycle Customer/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: /Welcome, E2E Lifecycle Customer/ })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Log out' }).click();
+  expect((await page.request.get('/api/customer/auth/me')).status()).toBe(401);
 });

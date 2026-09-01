@@ -8,6 +8,7 @@ import { staffRoutes } from './routes/staff.routes.js';
 import { availabilityRoutes } from './routes/availability.routes.js';
 import { appointmentRoutes } from './routes/appointment.routes.js';
 import { publicRoutes } from './routes/public.routes.js';
+import { customerRoutes } from './routes/customer.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 export function createApp() {
@@ -22,6 +23,7 @@ export function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
+  app.use('/api/customer', customerRoutes);
   app.use('/api/businesses', businessRoutes);
   app.use('/api/business', businessRoutes);
   app.use('/api/services', serviceRoutes);

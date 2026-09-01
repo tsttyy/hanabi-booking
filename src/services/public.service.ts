@@ -2,6 +2,14 @@ import { prisma } from '../lib/prisma.js';
 
 const businessFields = { id: true, name: true, contactEmail: true, contactPhone: true, timezone: true } as const;
 
+export function listActiveBusinesses() {
+  return prisma.business.findMany({
+    where: { status: 'ACTIVE' },
+    select: businessFields,
+    orderBy: { name: 'asc' },
+  });
+}
+
 export function getActiveBusiness(id: string) {
   return prisma.business.findFirst({ where: { id, status: 'ACTIVE' }, select: businessFields });
 }
@@ -19,4 +27,18 @@ export async function getBookingContext(businessId: string, serviceId: string, s
   if (!service) return null;
   if (staffId && !await prisma.staff.findFirst({ where: { id: staffId, businessId, status: 'ACTIVE' }, select: { id: true } })) return null;
   return service;
+}
+
+export function getBookingForCustomer(bookingReference: string, customerEmail: string) {
+  return prisma.appointment.findFirst({
+    where: { bookingReference, customerEmail },
+    include: { business: { select: businessFields }, service: true, staff: true },
+  });
+}
+
+export async function cancelBookingForCustomer(bookingReference: string, customerEmail: string) {
+  const appointment = await prisma.appointment.findFirst({ where: { bookingReference, customerEmail } });
+  if (!appointment) return null;
+  if (appointment.status === 'CANCELLED') return appointment;
+  return prisma.appointment.update({ where: { id: appointment.id }, data: { status: 'CANCELLED' } });
 }

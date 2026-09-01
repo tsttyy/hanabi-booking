@@ -8,6 +8,12 @@ declare global {
         role: 'SYSTEM_OWNER' | 'BUSINESS_ADMIN';
         status: 'ACTIVE' | 'DISABLED';
       };
+      customer?: {
+        id: string;
+        email: string;
+        name: string;
+        status: 'ACTIVE' | 'DISABLED';
+      };
       businessId?: string;
     }
   }

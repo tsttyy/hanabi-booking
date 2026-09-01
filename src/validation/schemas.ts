@@ -5,12 +5,37 @@ export const loginSchema = z.object({
   password: z.string().min(8, 'Password is required'),
 });
 
+export const customerSignupSchema = z.object({
+  name: z.string().min(2, 'Name is required'),
+  email: z.string().trim().email('Valid email required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  phone: z.string().min(7, 'Valid phone number required').optional(),
+});
+
+export const customerLoginSchema = z.object({
+  email: z.string().trim().email('Invalid email format'),
+  password: z.string().min(8, 'Password is required'),
+});
+
+export const customerProfileUpdateSchema = z.object({
+  name: z.string().min(2, 'Name is required').optional(),
+  phone: z.string().min(7, 'Valid phone number required').nullable().optional(),
+});
+
+export const customerPasswordChangeSchema = z.object({
+  currentPassword: z.string().min(8, 'Current password is required'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+});
+
 export const businessCreateSchema = z.object({
   name: z.string().min(2, 'Business name is required'),
   contactEmail: z.string().trim().email('Invalid contact email'),
   contactPhone: z.string().min(7, 'Phone number is required'),
   timezone: z.string().min(2, 'Timezone is required'),
   status: z.enum(['ACTIVE', 'DISABLED']).optional(),
+  adminName: z.string().min(2, 'Admin name is required'),
+  adminEmail: z.string().trim().email('Invalid admin email'),
+  adminPassword: z.string().min(8, 'Admin password must be at least 8 characters'),
 });
 
 export const businessStatusSchema = z.object({

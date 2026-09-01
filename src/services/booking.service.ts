@@ -144,12 +144,15 @@ export async function createAppointmentSafe(input: {
       throw Object.assign(new Error('Appointment conflicts with an existing booking'), { status: 409 });
     }
 
+    const customer = input.customerEmail ? await tx.customer.findUnique({ where: { email: input.customerEmail.toLowerCase().trim() } }) : null;
+
     const bookingReference = `HB-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
     return tx.appointment.create({
       data: {
         businessId: input.businessId,
         serviceId: input.serviceId,
         staffId: input.staffId ?? null,
+        customerId: customer?.id ?? null,
         customerName: input.customerName,
         customerEmail: input.customerEmail,
         customerPhone: input.customerPhone,
@@ -158,6 +161,7 @@ export async function createAppointmentSafe(input: {
         bookingReference,
         status: 'CONFIRMED',
       },
+      include: { service: true, staff: true },
     });
   });
 

@@ -50,6 +50,10 @@ export async function updateAvailabilityController(req: Request, res: Response, 
     }
     const id = String(req.params.id);
     const availability = await availabilityService.updateAvailabilityForBusiness(businessId, id, parsed.data);
+    if (!availability) {
+      sendError(res, 404, 'NOT_FOUND', 'Availability not found');
+      return;
+    }
     sendSuccess(res, 200, { availability });
   } catch (error) {
     next(error);

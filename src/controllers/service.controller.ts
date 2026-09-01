@@ -69,6 +69,10 @@ export async function updateServiceController(req: Request, res: Response, next:
     }
     const id = String(req.params.id);
     const service = await serviceService.updateServiceForBusiness(businessId, id, parsed.data);
+    if (!service) {
+      sendError(res, 404, 'NOT_FOUND', 'Service not found');
+      return;
+    }
     sendSuccess(res, 200, { service });
   } catch (error) {
     next(error);

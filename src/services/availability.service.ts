@@ -16,6 +16,8 @@ export async function createAvailabilityForBusiness(
 }
 
 export async function updateAvailabilityForBusiness(businessId: string, id: string, data: Prisma.AvailabilityUpdateInput) {
+  const existing = await prisma.availability.findFirst({ where: { id, businessId } });
+  if (!existing) return null;
   return prisma.availability.update({
     where: { id },
     data,

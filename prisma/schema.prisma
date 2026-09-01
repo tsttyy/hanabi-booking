@@ -133,11 +133,27 @@ model Availability {
   @@index([businessId, staffId, status])
 }
 
+model Customer {
+  id           String      @id @default(uuid()) @db.Uuid
+  name         String
+  email        String      @unique
+  passwordHash String
+  phone        String?
+  status       UserStatus  @default(ACTIVE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  appointments Appointment[]
+
+  @@index([email])
+}
+
 model Appointment {
   id               String            @id @default(uuid()) @db.Uuid
   businessId       String            @db.Uuid
   serviceId        String            @db.Uuid
   staffId          String?           @db.Uuid
+  customerId       String?           @db.Uuid
   customerName     String
   customerEmail    String
   customerPhone    String
@@ -151,8 +167,10 @@ model Appointment {
   business         Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
   service          Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   staff            Staff?            @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  customer         Customer?         @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([businessId, startAt])
   @@index([staffId, startAt])
   @@index([serviceId])
+  @@index([customerId])
 }

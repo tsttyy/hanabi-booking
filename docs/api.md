@@ -52,6 +52,30 @@
 - `GET /api/appointments/:id` — Business Admin only; fetch one tenant-scoped appointment.
 - `PATCH /api/appointments/:id/status` — Business Admin only; update appointment status.
 
+## Customer routes
+
+- `POST /api/customer/auth/signup` — Public customer registration; sets HTTP-only `customerToken` cookie.
+- `POST /api/customer/auth/login` — Customer login; sets HTTP-only `customerToken` cookie.
+- `POST /api/customer/auth/logout` — Clears the customer auth cookie.
+- `GET /api/customer/auth/me` — Authenticated customer session payload.
+- `GET /api/customer/profile` / `PATCH /api/customer/profile` — Customer profile.
+- `PATCH /api/customer/password` — Customer password change.
+- `GET /api/customer/appointments` — Appointments linked to the authenticated customer.
+- `GET /api/customer/appointments/:id` — Single customer-owned appointment.
+- `PATCH /api/customer/appointments/:id/cancel` — Customer cancellation of an owned appointment.
+
+There is no public Business Admin signup. Business Admin accounts are provisioned when a System Owner creates a business.
+
+## Public booking routes
+
+- `GET /api/public/businesses` — Active businesses available for customer booking.
+- `GET /api/public/businesses/:businessId` — Active business details for the booking page.
+- `GET /api/public/businesses/:businessId/services` — Active services for an active business.
+- `GET /api/public/businesses/:businessId/staff` — Active staff for an active business.
+- `GET /api/public/businesses/:businessId/services/:serviceId/slots?date=YYYY-MM-DD&staffId=:staffId` — Server-generated available slots.
+- `GET /api/public/bookings?reference=:reference&email=:email` — Customer-owned booking lookup.
+- `POST /api/public/bookings/cancel` — Customer self-cancellation; requires `reference` and `email` in the request body.
+
 ## Error payload format
 
 ```json

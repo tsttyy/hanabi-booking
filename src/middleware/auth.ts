@@ -11,8 +11,19 @@ export type AuthUser = {
   status: 'ACTIVE' | 'DISABLED';
 };
 
+export type AuthCustomer = {
+  id: string;
+  email: string;
+  name: string;
+  status: 'ACTIVE' | 'DISABLED';
+};
+
 export function signToken(user: AuthUser) {
   return jwt.sign(user, env.jwtSecret, { expiresIn: '8h' });
+}
+
+export function signCustomerToken(customer: AuthCustomer) {
+  return jwt.sign(customer, env.jwtSecret, { expiresIn: '8h' });
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -28,7 +39,35 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     const payload = jwt.verify(token, env.jwtSecret) as AuthUser;
+    if (payload.role !== 'SYSTEM_OWNER' && payload.role !== 'BUSINESS_ADMIN') {
+      sendError(res, 401, 'AUTH_ERROR', 'Authentication required');
+      return;
+    }
     req.user = payload;
+    next();
+  } catch {
+    sendError(res, 401, 'AUTH_ERROR', 'Invalid or expired token');
+  }
+}
+
+export function requireCustomerAuth(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const tokenFromCookie = req.cookies?.customerToken;
+  const token = tokenFromHeader ?? tokenFromCookie;
+
+  if (!token) {
+    sendError(res, 401, 'AUTH_ERROR', 'Authentication required');
+    return;
+  }
+
+  try {
+    const payload = jwt.verify(token, env.jwtSecret) as AuthCustomer & { role?: string };
+    if (payload.role === 'SYSTEM_OWNER' || payload.role === 'BUSINESS_ADMIN') {
+      sendError(res, 403, 'FORBIDDEN', 'You do not have permission to access this resource');
+      return;
+    }
+    req.customer = payload;
     next();
   } catch {
     sendError(res, 401, 'AUTH_ERROR', 'Invalid or expired token');

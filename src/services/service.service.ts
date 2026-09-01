@@ -20,6 +20,8 @@ export async function createServiceForBusiness(
 }
 
 export async function updateServiceForBusiness(businessId: string, id: string, data: Prisma.ServiceUpdateInput) {
+  const existing = await prisma.service.findFirst({ where: { id, businessId } });
+  if (!existing) return null;
   return prisma.service.update({
     where: { id },
     data,

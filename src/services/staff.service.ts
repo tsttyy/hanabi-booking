@@ -20,6 +20,8 @@ export async function createStaffForBusiness(
 }
 
 export async function updateStaffForBusiness(businessId: string, id: string, data: Prisma.StaffUpdateInput) {
+  const existing = await prisma.staff.findFirst({ where: { id, businessId } });
+  if (!existing) return null;
   return prisma.staff.update({
     where: { id },
     data,

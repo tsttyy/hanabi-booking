@@ -380,4 +380,38 @@ describe('Hanabi booking backend', () => {
 
     expect(response.status).toBe(201);
   });
+
+  it('should expose only public booking catalog data for an active business', async () => {
+    const business = await prisma.business.findUnique({ where: { contactEmail: 'businessA@example.com' } });
+    const service = await prisma.service.findFirst({ where: { businessId: business!.id, status: 'ACTIVE' } });
+    const staff = await prisma.staff.findFirst({ where: { businessId: business!.id, status: 'ACTIVE' } });
+
+    const [catalog, services, slots] = await Promise.all([
+      request(app).get(`/api/public/businesses/${business!.id}`),
+      request(app).get(`/api/public/businesses/${business!.id}/services`),
+      request(app).get(`/api/public/businesses/${business!.id}/services/${service!.id}/slots?date=2026-09-07&staffId=${staff!.id}`),
+    ]);
+
+    expect(catalog.status).toBe(200);
+    expect(catalog.body.business).not.toHaveProperty('status');
+    expect(services.status).toBe(200);
+    expect(services.body.services[0]).not.toHaveProperty('status');
+    expect(slots.status).toBe(200);
+    expect(slots.body.slots).not.toContain('2026-09-07T10:00:00.000Z');
+  });
+
+  it('should require customer email ownership for public booking lookup and cancellation', async () => {
+    const notOwner = await request(app).get('/api/public/bookings?reference=REF-EXISTING-1&email=not-owner@example.com');
+    expect(notOwner.status).toBe(404);
+
+    const lookup = await request(app).get('/api/public/bookings?reference=REF-EXISTING-1&email=existing@example.com');
+    expect(lookup.status).toBe(200);
+    expect(lookup.body.appointment.customerEmail).toBe('existing@example.com');
+
+    const cancelled = await request(app)
+      .post('/api/public/bookings/cancel')
+      .send({ reference: 'REF-EXISTING-1', email: 'existing@example.com' });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.appointment.status).toBe('CANCELLED');
+  });
 });

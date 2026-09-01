@@ -69,6 +69,10 @@ export async function updateStaffController(req: Request, res: Response, next: N
     }
     const id = String(req.params.id);
     const staff = await staffService.updateStaffForBusiness(businessId, id, parsed.data);
+    if (!staff) {
+      sendError(res, 404, 'NOT_FOUND', 'Staff not found');
+      return;
+    }
     sendSuccess(res, 200, { staff });
   } catch (error) {
     next(error);

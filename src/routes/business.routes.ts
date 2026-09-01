@@ -8,8 +8,9 @@ businessRoutes.use(requireAuth);
 
 businessRoutes.get('/', requireRole('SYSTEM_OWNER'), listBusinessesController);
 businessRoutes.post('/', requireRole('SYSTEM_OWNER'), createBusinessController);
-businessRoutes.get('/:id', requireRole('SYSTEM_OWNER'), getBusinessController);
-businessRoutes.patch('/:id/status', requireRole('SYSTEM_OWNER'), updateBusinessStatusController);
 
 businessRoutes.get('/profile', requireRole('BUSINESS_ADMIN'), getBusinessProfileController);
 businessRoutes.patch('/profile', requireRole('BUSINESS_ADMIN'), updateBusinessProfileController);
+
+businessRoutes.get('/:id', requireRole('SYSTEM_OWNER'), getBusinessController);
+businessRoutes.patch('/:id/status', requireRole('SYSTEM_OWNER'), updateBusinessStatusController);
