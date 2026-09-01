@@ -353,8 +353,8 @@ describe('Hanabi booking backend', () => {
         customerName: 'Cancelled Customer',
         customerEmail: 'cancelled@example.com',
         customerPhone: '+15550000012',
-        startAt: new Date('2026-09-09T11:00:00Z'),
-        endAt: new Date('2026-09-09T11:30:00Z'),
+        startAt: new Date('2026-09-07T11:00:00Z'),
+        endAt: new Date('2026-09-07T11:30:00Z'),
         bookingReference: 'REF-CANCELLED-1',
         status: 'CANCELLED',
       },
@@ -374,10 +374,10 @@ describe('Hanabi booking backend', () => {
         customerName: 'Next Customer',
         customerEmail: 'next@example.com',
         customerPhone: '+15550000013',
-        startAt: '2026-09-09T11:00:00Z',
+        startAt: '2026-09-07T11:00:00Z',
         timezone: 'UTC',
       });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
   });
 });

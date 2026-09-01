@@ -7,6 +7,7 @@ import { serviceRoutes } from './routes/service.routes.js';
 import { staffRoutes } from './routes/staff.routes.js';
 import { availabilityRoutes } from './routes/availability.routes.js';
 import { appointmentRoutes } from './routes/appointment.routes.js';
+import { publicRoutes } from './routes/public.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 export function createApp() {
@@ -27,6 +28,7 @@ export function createApp() {
   app.use('/api/staff', staffRoutes);
   app.use('/api/availability', availabilityRoutes);
   app.use('/api/appointments', appointmentRoutes);
+  app.use('/api/public', publicRoutes);
 
   app.use(errorHandler);
 

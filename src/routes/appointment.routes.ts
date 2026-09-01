@@ -4,8 +4,8 @@ import { createAppointmentController, getAppointmentController, listAppointments
 
 export const appointmentRoutes = Router();
 
-appointmentRoutes.use(requireAuth);
 appointmentRoutes.post('/', createAppointmentController);
+appointmentRoutes.use(requireAuth);
 appointmentRoutes.get('/', requireRole('BUSINESS_ADMIN'), listAppointmentsController);
 appointmentRoutes.get('/:id', requireRole('BUSINESS_ADMIN'), getAppointmentController);
 appointmentRoutes.patch('/:id/status', requireRole('BUSINESS_ADMIN'), updateAppointmentStatusController);
