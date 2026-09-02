@@ -3,6 +3,15 @@ import { customerSignupSchema, customerLoginSchema, customerProfileUpdateSchema,
 import * as customerService from '../services/customer.service.js';
 import * as customerAppointmentService from '../services/customer-appointment.service.js';
 import { sendError, sendSuccess } from '../utils/api.js';
+import { env } from '../config/env.js';
+
+const cookieOptions = {
+  httpOnly: true,
+  sameSite: env.nodeEnv === 'production' ? ('none' as const) : ('lax' as const),
+  secure: env.nodeEnv === 'production',
+  maxAge: 8 * 60 * 60 * 1000,
+  domain: env.nodeEnv === 'production' ? undefined : undefined
+};
 
 export async function signupController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -19,12 +28,7 @@ export async function signupController(req: Request, res: Response, next: NextFu
       parsed.data.phone
     );
 
-    res.cookie('customerToken', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 8 * 60 * 60 * 1000,
-    });
+    res.cookie('customerToken', result.token, cookieOptions);
 
     sendSuccess(res, 201, { customer: result.customer, token: result.token });
   } catch (error) {
@@ -51,12 +55,7 @@ export async function loginController(req: Request, res: Response, next: NextFun
       return;
     }
 
-    res.cookie('customerToken', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 8 * 60 * 60 * 1000,
-    });
+    res.cookie('customerToken', result.token, cookieOptions);
 
     sendSuccess(res, 200, { customer: result.customer, token: result.token });
   } catch (error) {
@@ -65,7 +64,7 @@ export async function loginController(req: Request, res: Response, next: NextFun
 }
 
 export function logoutController(_req: Request, res: Response) {
-  res.clearCookie('customerToken');
+  res.clearCookie('customerToken', cookieOptions);
   sendSuccess(res, 200, { message: 'Logged out successfully' });
 }
 

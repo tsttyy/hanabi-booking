@@ -10,11 +10,18 @@ import { appointmentRoutes } from './routes/appointment.routes.js';
 import { publicRoutes } from './routes/public.routes.js';
 import { customerRoutes } from './routes/customer.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { env } from './config/env.js';
 
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(cors({
+    credentials: true,
+    origin(origin, callback) {
+      if (!origin || env.frontendOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+  }));
   app.use(express.json());
   app.use(cookieParser());
 

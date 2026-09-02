@@ -32,10 +32,15 @@ class ApiError extends Error {
   }
 }
 
+// Empty in development: Vite proxies same-origin /api requests to the local API.
+// In production, set VITE_API_BASE_URL to the deployed API's /api URL.
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+const apiUrl = (path: string) => (apiBaseUrl ? `${apiBaseUrl}${path.replace(/^\/api/, '')}` : path);
+
 async function call<T>(url: string, init: RequestInit = {}): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(url, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init });
+    r = await fetch(apiUrl(url), { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init });
   } catch {
     throw new ApiError(0, 'Unable to connect to the booking server');
   }

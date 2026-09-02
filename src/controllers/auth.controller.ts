@@ -2,6 +2,15 @@ import { NextFunction, Request, Response } from 'express';
 import { loginSchema } from '../validation/schemas.js';
 import { authenticateUser } from '../services/auth.service.js';
 import { sendError, sendSuccess } from '../utils/api.js';
+import { env } from '../config/env.js';
+
+const cookieOptions = {
+  httpOnly: true,
+  sameSite: env.nodeEnv === 'production' ? ('none' as const) : ('lax' as const),
+  secure: env.nodeEnv === 'production',
+  maxAge: 8 * 60 * 60 * 1000,
+  domain: env.nodeEnv === 'production' ? undefined : undefined // Vercel and Render use different subdomains, 'none' SameSite covers this.
+};
 
 export async function loginController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -17,12 +26,7 @@ export async function loginController(req: Request, res: Response, next: NextFun
       return;
     }
 
-    res.cookie('token', result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 8 * 60 * 60 * 1000,
-    });
+    res.cookie('token', result.token, cookieOptions);
 
     sendSuccess(res, 200, { user: result.user, token: result.token });
   } catch (error) {
@@ -31,7 +35,7 @@ export async function loginController(req: Request, res: Response, next: NextFun
 }
 
 export function logoutController(_req: Request, res: Response) {
-  res.clearCookie('token');
+  res.clearCookie('token', cookieOptions);
   sendSuccess(res, 200, { message: 'Logged out successfully' });
 }
 
