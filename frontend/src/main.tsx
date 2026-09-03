@@ -35,7 +35,7 @@ class ApiError extends Error {
 // Empty in development: Vite proxies same-origin /api requests to the local API.
 // In production, set VITE_API_BASE_URL to the deployed API's /api URL.
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
-const apiUrl = (path: string) => (apiBaseUrl ? `${apiBaseUrl}${path.replace(/^\/api/, '')}` : path);
+const apiUrl = (path: string) => (apiBaseUrl ? `${apiBaseUrl}${path}` : path);
 
 async function call<T>(url: string, init: RequestInit = {}): Promise<T> {
   let r: Response;
