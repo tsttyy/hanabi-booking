@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const frontendOrigins = (process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173')
+const frontendOrigins = (process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173,https://frontend-fb6k02afn-tsttyys-projects.vercel.app')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
