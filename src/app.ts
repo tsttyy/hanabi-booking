@@ -18,9 +18,13 @@ export function createApp() {
   app.use(cors({
     credentials: true,
     origin(origin, callback) {
-      if (!origin || env.frontendOrigins.includes(origin)) return callback(null, true);
+      if (!origin || env.frontendOrigins.includes(origin) || /^https:\/\/.*\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
       return callback(null, false);
     },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   }));
   app.use(express.json());
   app.use(cookieParser());
