@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createRoot } from 'react-dom/client';
-import { FormEvent, ReactNode, createContext, useContext, useEffect, useState } from 'react';
-import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Component, ErrorInfo, FormEvent, ReactNode, createContext, useContext, useEffect, useState } from 'react';
+import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import './styles.css';
 
@@ -32,21 +32,96 @@ class ApiError extends Error {
   }
 }
 
-// Empty in development: Vite proxies same-origin /api requests to the local API.
-// In production, set VITE_API_BASE_URL to the deployed API's /api URL.
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+let rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+const PROD_HOST_PATTERN = /(onrender\.com|vercel\.app|herokuapp\.com|railway\.app|fly\.dev|netlify\.app)/i;
+let devProdOverride = false;
+if (import.meta.env.DEV && PROD_HOST_PATTERN.test(rawApiBaseUrl)) {
+  devProdOverride = true;
+  const dangerous = rawApiBaseUrl;
+  rawApiBaseUrl = '';
+  const msg = [
+    '═══════════════════════════════════════════════════════════════════',
+    '⚠️  VITE_API_BASE_URL MISCONFIGURATION DETECTED IN LOCAL DEV',
+    '═══════════════════════════════════════════════════════════════════',
+    `Your frontend/.env sets VITE_API_BASE_URL=${dangerous}`,
+    'This forces every local API request to go over the internet to the',
+    'PRODUCTION backend, causing 10-60s Render/Vercel cold-start hangs on',
+    'every page navigation (the "black screen" you reported).',
+    '',
+    'FIX APPLIED AUTOMATICALLY IN DEV: Overriding VITE_API_BASE_URL to ""',
+    '(empty) so Vite proxies /api → http://127.0.0.1:4000 (local backend).',
+    '',
+    'PERMANENT FIX: Delete/comment the VITE_API_BASE_URL line in',
+    'frontend/.env so this does not silently regress again. See the',
+    'WARNING block in frontend/.env.example for the full explanation.',
+    '═══════════════════════════════════════════════════════════════════',
+  ].join('\n');
+  console.warn('%c' + msg, 'background:#a62828;color:#fff;padding:6px 10px;font-family:monospace;font-weight:bold');
+  try {
+    const root = document.getElementById('root');
+    if (root) {
+      const banner = document.createElement('div');
+      banner.setAttribute('data-dev-env-warning', '1');
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;background:#a62828;color:#fff;padding:10px 18px;font:600 13px/1.4 monospace;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+      banner.innerHTML = '⚠️ DEV MISCONFIG: VITE_API_BASE_URL points at production backend → AUTO-OVERRIDDEN to local proxy. Check frontend/.env &amp; remove the VITE_API_BASE_URL line.';
+      document.body.insertBefore(banner, root);
+    }
+  } catch (_) { /* no-op */ }
+}
+const apiBaseUrl = rawApiBaseUrl;
 const apiUrl = (path: string) => (apiBaseUrl ? `${apiBaseUrl}${path}` : path);
+
+
 
 async function call<T>(url: string, init: RequestInit = {}): Promise<T> {
   let r: Response;
+  const fullUrl = apiUrl(url);
   try {
-    r = await fetch(apiUrl(url), { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init });
+    r = await fetch(fullUrl, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...init });
   } catch {
     throw new ApiError(0, 'Unable to connect to the booking server');
   }
   const b = await r.json().catch(() => ({}));
   if (!r.ok || b.success === false) throw new ApiError(r.status, b.error?.message || 'Request failed');
   return b as T;
+}
+
+function PageLoader({ label }: { label?: string }) {
+  return (
+    <div className="page-loader" role="status" aria-live="polite">
+      <div className="spinner" aria-hidden="true" />
+      <p>{label ? `Loading ${label}…` : 'Loading…'}</p>
+    </div>
+  );
+}
+
+function SectionCard({ title, description, children, note, noteType }: {
+  title?: string; description?: string; children: ReactNode;
+  note?: string; noteType?: 'success' | 'error';
+}) {
+  return (
+    <div className="section-card">
+      {title && <h2>{title}</h2>}
+      {description && <p className="section-desc">{description}</p>}
+      {note && (
+        <div style={{ marginBottom: '1rem' }}>
+          <span className={noteType === 'success' ? 'success-toast' : 'error-toast'}>
+            {noteType === 'success' ? '✓' : '⚠'} {note}
+          </span>
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function EmptyState({ icon, message: msg }: { icon: string; message: string }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-icon">{icon}</div>
+      <p>{msg}</p>
+    </div>
+  );
 }
 
 function post<T>(url: string, body: unknown): Promise<T> {
@@ -144,7 +219,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : 'Something wen
 
 function Guard({ children, role }: { children: ReactNode; role?: Role }) {
   const a = useAuth();
-  if (!a.ready) return <p>Loading…</p>;
+  if (!a.ready) return <PageLoader />;
   if (!a.user) return <Navigate to="/login" />;
   if (role && a.user.role !== role) return <Navigate to="/dashboard" />;
   return <>{children}</>;
@@ -152,7 +227,7 @@ function Guard({ children, role }: { children: ReactNode; role?: Role }) {
 
 function CustomerGuard({ children }: { children: ReactNode }) {
   const a = useAuth();
-  if (!a.ready) return <p>Loading…</p>;
+  if (!a.ready) return <PageLoader />;
   if (!a.customer) return <Navigate to="/customer/login" />;
   return <>{children}</>;
 }
@@ -472,20 +547,26 @@ function Dashboard() {
 
 function AdminDashboard() {
   const [stats, setStats] = useState<number[] | null>(null);
+  const [note, setNote] = useState('');
   useEffect(() => {
-    Promise.all([api.services(), api.staff(), api.appointments()]).then(([s, t, a]) =>
-      setStats([
-        s.services.filter((x) => x.status === 'ACTIVE').length,
-        t.staff.length,
-        a.appointments.filter((x) => new Date(x.startAt) > new Date()).length,
-        a.appointments.filter((x) => new Date(x.startAt).toDateString() === new Date().toDateString()).length,
-      ])
-    );
+    Promise.all([api.services(), api.staff(), api.appointments()])
+      .then(([s, t, a]) =>
+        setStats([
+          s.services.filter((x) => x.status === 'ACTIVE').length,
+          t.staff.length,
+          a.appointments.filter((x) => new Date(x.startAt) > new Date()).length,
+          a.appointments.filter((x) => new Date(x.startAt).toDateString() === new Date().toDateString()).length,
+        ])
+      )
+      .catch((e) => setNote(message(e)));
   }, []);
   return (
     <Page title="Dashboard">
+      {note && <p className="alert">{note}</p>}
       {!stats ? (
-        <p>Loading dashboard…</p>
+        note ? null : (
+          <PageLoader label="dashboard" />
+        )
       ) : (
         <div className="stats">
           {['Active services', 'Team members', 'Upcoming', 'Today'].map((x, i) => (
@@ -512,7 +593,7 @@ function CustomerDashboard() {
       .catch((e) => setError(message(e)));
   }, []);
 
-  if (!apts) return <p>Loading customer dashboard…</p>;
+  if (!apts) return <PageLoader label="customer dashboard" />;
 
   const upcoming = apts.filter((x) => new Date(x.startAt) >= new Date() && x.status !== 'CANCELLED');
   const pastOrCancelled = apts.filter((x) => new Date(x.startAt) < new Date() || x.status === 'CANCELLED');
@@ -616,7 +697,7 @@ function CustomerProfilePage() {
       .catch(() => {});
   }, []);
 
-  if (!customer) return <p>Loading profile…</p>;
+  if (!customer) return <PageLoader label="profile" />;
 
   async function handleUpdateProfile(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -756,7 +837,7 @@ function CustomerAppointmentsPage() {
     load();
   }, []);
 
-  if (!apts) return <p>Loading appointments…</p>;
+  if (!apts) return <PageLoader label="appointments" />;
 
   const filtered = apts.filter((x) => {
     if (filter === 'UPCOMING') return new Date(x.startAt) >= new Date() && x.status !== 'CANCELLED';
@@ -862,7 +943,7 @@ function CustomerAppointmentDetail() {
     );
   }
 
-  if (!apt) return <p>Loading appointment details…</p>;
+  if (!apt) return <PageLoader label="appointment details" />;
 
   const canCancel = apt.status === 'CONFIRMED' && (new Date(apt.startAt).getTime() - Date.now()) > 3600000;
 
@@ -967,7 +1048,7 @@ function Businesses() {
       setError(message(e));
     }
   }
-  if (!items) return <p>Loading businesses…</p>;
+  if (!items) return <PageLoader label="businesses" />;
   return (
     <Page title="Businesses" action={<button onClick={() => setShow(true)}>New business</button>}>
       {error && <p className="alert">{error}</p>}
@@ -1061,48 +1142,67 @@ function Businesses() {
 
 function Profile() {
   const [b, setB] = useState<Business | null>(null),
-    [note, setNote] = useState('');
+    [note, setNote] = useState(''),
+    [noteType, setNoteType] = useState<'success' | 'error'>('success');
   useEffect(() => {
     api
       .profile()
       .then((x) => setB(x.business))
-      .catch((e) => setNote(message(e)));
+      .catch((e) => { setNote(message(e)); setNoteType('error'); });
   }, []);
-  if (!b) return <p>Loading profile…</p>;
+  if (!b) return <PageLoader label="business profile" />;
   return (
     <Page title="Business profile">
-      <p className="oktext">{note}</p>
-      <form
-        className="card grid"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            const r = await api.updateProfile(Object.fromEntries(new FormData(e.currentTarget)));
-            setB(r.business);
-            setNote('Profile saved.');
-          } catch (e) {
-            setNote(message(e));
-          }
-        }}
+      <SectionCard
+        title="Business Details"
+        description="Manage your business information. Changes here affect how your business appears to customers."
+        note={note}
+        noteType={noteType}
       >
-        <label>
-          Name
-          <input name="name" defaultValue={b.name} required />
-        </label>
-        <label>
-          Email
-          <input name="contactEmail" type="email" defaultValue={b.contactEmail} required />
-        </label>
-        <label>
-          Phone
-          <input name="contactPhone" defaultValue={b.contactPhone} required />
-        </label>
-        <label>
-          Timezone
-          <input name="timezone" defaultValue={b.timezone} required />
-        </label>
-        <button>Save changes</button>
-      </form>
+        <form
+          className="grid"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              const r = await api.updateProfile(Object.fromEntries(new FormData(e.currentTarget)));
+              setB(r.business);
+              setNote('Profile saved successfully.');
+              setNoteType('success');
+              setTimeout(() => setNote(''), 4000);
+            } catch (e) {
+              setNote(message(e));
+              setNoteType('error');
+            }
+          }}
+        >
+          <div style={{ gridColumn: '1 / -1' }}>
+            <span className="field-group-title">Business Identity</span>
+          </div>
+          <label>
+            Business Name
+            <input name="name" defaultValue={b.name} required />
+          </label>
+          <label>
+            Timezone
+            <input name="timezone" defaultValue={b.timezone} required />
+          </label>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <hr className="section-divider" />
+            <span className="field-group-title">Contact Information</span>
+          </div>
+          <label>
+            Email
+            <input name="contactEmail" type="email" defaultValue={b.contactEmail} required />
+          </label>
+          <label>
+            Phone
+            <input name="contactPhone" defaultValue={b.contactPhone} required />
+          </label>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '.5rem' }}>
+            <button>Save changes</button>
+          </div>
+        </form>
+      </SectionCard>
     </Page>
   );
 }
@@ -1136,7 +1236,7 @@ function Crud({ kind }: { kind: 'services' | 'staff' }) {
       setNote(message(e));
     }
   }
-  if (!items) return <p>Loading {kind}…</p>;
+  if (!items) return <PageLoader label={kind} />;
   return (
     <Page
       title={isService ? 'Services' : 'Staff'}
@@ -1228,7 +1328,7 @@ function AvailabilityPage() {
         setStaff(s.staff);
       })
       .catch((e) => setNote(message(e)));
-  useEffect(load, []);
+  useEffect(() => { void load(); }, []);
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const d = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
@@ -1251,7 +1351,7 @@ function AvailabilityPage() {
     }
   }
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  if (!items) return <p>Loading availability…</p>;
+  if (!items) return <PageLoader label="availability" />;
   return (
     <Page title="Availability">
       <p className="alert">{note}</p>
@@ -1321,14 +1421,19 @@ function AvailabilityPage() {
 
 function Appointments() {
   const [all, setAll] = useState<Appointment[] | null>(null),
-    [status, setStatus] = useState('');
+    [status, setStatus] = useState(''),
+    [note, setNote] = useState('');
   useEffect(() => {
-    api.appointments().then((x) => setAll(x.appointments));
+    api
+      .appointments()
+      .then((x) => setAll(x.appointments))
+      .catch((e) => setNote(message(e)));
   }, []);
-  if (!all) return <p>Loading appointments…</p>;
+  if (!all) return note ? <p className="alert">{note}</p> : <PageLoader label="appointments" />;
   const items = all.filter((x) => !status || x.status === status);
   return (
     <Page title="Appointments">
+      {note && <p className="alert">{note}</p>}
       <label>
         Filter by status
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -1360,7 +1465,8 @@ function Appointments() {
                   if (e.target.value === 'CANCELLED' && !confirm('Cancel this appointment?')) return;
                   patch(`/api/appointments/${x.id}/status`, { status: e.target.value })
                     .then(() => api.appointments())
-                    .then((r) => setAll(r.appointments));
+                    .then((r) => setAll(r.appointments))
+                    .catch((err) => setNote(message(err)));
                 }}
               >
                 {['CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((s) => (
@@ -1405,7 +1511,7 @@ function BrowseBusinesses() {
       <p>Select a business to book a service.</p>
       {error && <p className="alert">{error}</p>}
       {!items ? (
-        <p>Loading businesses…</p>
+        <PageLoader label="businesses" />
       ) : items.length === 0 ? (
         <p>No businesses are currently accepting bookings.</p>
       ) : (
@@ -1483,7 +1589,7 @@ function Booking() {
         <p>{note}</p>
       </main>
     );
-  if (!b) return <main className="booking">Loading booking experience…</main>;
+  if (!b) return <main className="booking"><PageLoader label="booking experience" /></main>;
 
   const validDetails = z
     .object({
@@ -1794,10 +1900,65 @@ function Lookup() {
   );
 }
 
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Surface it in the console for debugging; a real deployment could also
+    // report this to an error-tracking service here.
+    console.error('Unhandled UI error:', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '3rem', maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
+          <h1>Something went wrong</h1>
+          <p>
+            The page hit an unexpected error and couldn't continue. Try reloading — if this keeps
+            happening, please contact support.
+          </p>
+          <p style={{ color: '#888', fontSize: '0.85rem', wordBreak: 'break-word' }}>{this.state.error.message}</p>
+          <button onClick={() => window.location.reload()}>Reload page</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function NavigationTracker({ children }: { children: ReactNode }) {
+  const loc = useLocation();
+  const [navigating, setNavigating] = useState(false);
+  const prevPath = useState({ v: loc.pathname })[0];
+  useEffect(() => {
+    if (prevPath.v !== loc.pathname) {
+      prevPath.v = loc.pathname;
+      setNavigating(true);
+      const t = setTimeout(() => setNavigating(false), 900);
+      return () => clearTimeout(t);
+    }
+  }, [loc.pathname]);
+  return (
+    <>
+      {navigating && <div className="route-progress" key={loc.pathname} />}
+      {children}
+    </>
+  );
+}
+
 function App() {
   return (
     <Provider>
-      <Routes>
+      <NavigationTracker>
+        <Routes>
         {/* Customer Auth & App Routes */}
         <Route path="/customer/login" element={<CustomerLogin />} />
         <Route path="/customer/signup" element={<CustomerSignup />} />
@@ -1919,13 +2080,16 @@ function App() {
           }
         />
         <Route path="*" element={<Navigate to="/dashboard" />} />
-      </Routes>
+        </Routes>
+      </NavigationTracker>
     </Provider>
   );
 }
 
 createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
-    <App />
-  </BrowserRouter>
+  <ErrorBoundary>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </ErrorBoundary>
 );

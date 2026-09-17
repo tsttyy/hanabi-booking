@@ -51,8 +51,15 @@ Deploy the Express backend as a Web Service.
 
 ## 6. Required Environment Variables
 
-**Frontend (Vercel)**
-- `VITE_API_BASE_URL`: `https://your-backend-app.onrender.com`
+**Frontend (Vercel / Production only — do NOT set locally)**
+- `VITE_API_BASE_URL`: `https://your-backend-app.onrender.com/api`
+  ⚠️ **LOCAL DEVELOPMENT WARNING**: Leave `VITE_API_BASE_URL` *empty/unset* in `frontend/.env`
+  during local development. Vite's built-in dev proxy will automatically route `/api/*` to
+  `http://127.0.0.1:4000` via `frontend/vite.config.ts`. Setting this variable to a remote
+  host (onrender.com / vercel.app) while running `npm run dev` forces every request to the
+  public internet, triggering Render free-tier cold-starts (15–60s) and causing apparent
+  "black screen hangs" on every admin page navigation. If you need a different local backend
+  port, edit the `proxy` target in `frontend/vite.config.ts`, not this env var.
 
 **Backend (Render/Railway)**
 - `NODE_ENV`: `production`
@@ -109,7 +116,20 @@ Customers register on the public-facing booking portal.
 6. System Owner logs in and verifies business tenant status.
 7. Business Admin logs in, verifies the appointment appeared in their tenant isolated view.
 
-## 12. Known Limitations
+## 12. Running Automated Tests
+
+To execute the test suite:
+```bash
+npm run test
+```
+
+### Test Suite Requirements & Expectations
+- **Database Connection**: `npm run test` requires `DATABASE_URL` pointing to a migrated PostgreSQL database (`npx prisma db push` or `npx prisma migrate deploy`).
+- **Self-Sufficient Data**: The test suite manages its own test data programmatically (including provisioning the System Owner baseline account). No manual seeding (`npm run db:seed`) is required prior to running tests.
+- **Idempotency**: Test files run sequentially (`fileParallelism: false`) with scoped setups to avoid cross-file race conditions. Running `npm run test` repeatedly on an unseeded or previously tested database is fully idempotent and self-isolated.
+
+## 13. Known Limitations
 
 - Vercel Serverless deployments are unsupported for the backend without Prisma Accelerate.
 - Timezones are currently fixed to the Business's timezone during booking operations.
+

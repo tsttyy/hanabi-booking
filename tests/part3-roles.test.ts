@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/prisma.js';
+import bcrypt from 'bcryptjs';
 
 const app = createApp();
 
@@ -12,6 +13,36 @@ describe('Part 3 Roles & Authorization', () => {
   let businessAId: string;
   let businessBId: string;
   let serviceAId: string;
+
+  beforeAll(async () => {
+    // Clean up any test businesses/admins from prior runs to ensure test idempotency
+    await prisma.appointment.deleteMany({ where: { business: { contactEmail: { in: ['biza@example.com', 'bizb@example.com'] } } } });
+    await prisma.availability.deleteMany({ where: { business: { contactEmail: { in: ['biza@example.com', 'bizb@example.com'] } } } });
+    await prisma.staff.deleteMany({ where: { business: { contactEmail: { in: ['biza@example.com', 'bizb@example.com'] } } } });
+    await prisma.service.deleteMany({ where: { business: { contactEmail: { in: ['biza@example.com', 'bizb@example.com'] } } } });
+    await prisma.user.deleteMany({ where: { email: { in: ['adminA@example.com', 'adminB@example.com'] } } });
+    await prisma.business.deleteMany({ where: { contactEmail: { in: ['biza@example.com', 'bizb@example.com'] } } });
+
+    // Ensure baseline System Owner user exists in the database
+    const ownerPasswordHash = await bcrypt.hash('Owner@12345', 10);
+    await prisma.user.upsert({
+      where: { email: 'owner@example.com' },
+      update: {
+        name: 'System Owner',
+        passwordHash: ownerPasswordHash,
+        role: 'SYSTEM_OWNER',
+        status: 'ACTIVE',
+      },
+      create: {
+        email: 'owner@example.com',
+        name: 'System Owner',
+        passwordHash: ownerPasswordHash,
+        role: 'SYSTEM_OWNER',
+        status: 'ACTIVE',
+      },
+    });
+  });
+
 
   it('18. System Owner Login', async () => {
     const response = await request(app)

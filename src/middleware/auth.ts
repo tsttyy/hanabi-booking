@@ -26,7 +26,21 @@ export function signCustomerToken(customer: AuthCustomer) {
   return jwt.sign(customer, env.jwtSecret, { expiresIn: '8h' });
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+import { prisma } from '../lib/prisma.js';
+
+type AuthStatusCacheEntry = { cachedAt: number; userActive: boolean; businessActive: boolean };
+const AUTH_STATUS_CACHE_TTL_MS = 10_000;
+const authStatusCache = new Map<string, AuthStatusCacheEntry>();
+if (typeof setInterval === 'function') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of authStatusCache) {
+      if (now - v.cachedAt > AUTH_STATUS_CACHE_TTL_MS) authStatusCache.delete(k);
+    }
+  }, 30_000).unref?.();
+}
+
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const tokenFromCookie = req.cookies?.token;
@@ -43,14 +57,46 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
       sendError(res, 401, 'AUTH_ERROR', 'Authentication required');
       return;
     }
+    
+    const cacheKey = payload.id;
+    const now = Date.now();
+    const cacheHit = authStatusCache.get(cacheKey);
+    const cacheFresh = cacheHit && now - cacheHit.cachedAt < AUTH_STATUS_CACHE_TTL_MS;
+
+    let userActive: boolean;
+    let businessActive: boolean;
+
+    if (cacheFresh) {
+      userActive = cacheHit!.userActive;
+      businessActive = cacheHit!.businessActive;
+    } else {
+      const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { status: true, businessId: true } });
+      userActive = !!(user && user.status === 'ACTIVE');
+      businessActive = true;
+      if (userActive && user?.businessId) {
+        const business = await prisma.business.findUnique({ where: { id: user.businessId }, select: { status: true } });
+        businessActive = !!(business && business.status === 'ACTIVE');
+      }
+      authStatusCache.set(cacheKey, { cachedAt: Date.now(), userActive, businessActive });
+    }
+
+    if (!userActive) {
+      sendError(res, 401, 'AUTH_ERROR', 'User account is disabled or missing');
+      return;
+    }
+    if (!businessActive) {
+      sendError(res, 401, 'AUTH_ERROR', 'Business is disabled or missing');
+      return;
+    }
+
     req.user = payload;
     next();
-  } catch {
+  } catch (err) {
     sendError(res, 401, 'AUTH_ERROR', 'Invalid or expired token');
   }
 }
 
-export function requireCustomerAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireCustomerAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const tokenFromCookie = req.cookies?.customerToken;
@@ -67,9 +113,17 @@ export function requireCustomerAuth(req: Request, res: Response, next: NextFunct
       sendError(res, 403, 'FORBIDDEN', 'You do not have permission to access this resource');
       return;
     }
+
+    // DB status freshness check
+    const customer = await prisma.customer.findUnique({ where: { id: payload.id } });
+    if (!customer || customer.status !== 'ACTIVE') {
+      sendError(res, 401, 'AUTH_ERROR', 'Customer account is disabled or missing');
+      return;
+    }
+
     req.customer = payload;
     next();
-  } catch {
+  } catch (err) {
     sendError(res, 401, 'AUTH_ERROR', 'Invalid or expired token');
   }
 }

@@ -42,6 +42,18 @@ export const businessStatusSchema = z.object({
   status: z.enum(['ACTIVE', 'DISABLED']),
 });
 
+// Deliberately excludes `status` and `id` — a Business Admin must never be able to
+// change their own business's enabled/disabled state via the self-service profile
+// endpoint. Status changes are a System Owner-only action (businessStatusSchema above).
+export const businessProfileUpdateSchema = z
+  .object({
+    name: z.string().min(2, 'Business name is required').optional(),
+    contactEmail: z.string().trim().email('Invalid contact email').optional(),
+    contactPhone: z.string().min(7, 'Phone number is required').optional(),
+    timezone: z.string().min(2, 'Timezone is required').optional(),
+  })
+  .strict();
+
 export const serviceSchema = z.object({
   name: z.string().min(2, 'Name is required'),
   description: z.string().optional(),

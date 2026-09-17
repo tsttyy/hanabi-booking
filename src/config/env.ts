@@ -7,10 +7,17 @@ const frontendOrigins = (process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_OR
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const rawJwtSecret = process.env.JWT_SECRET;
+
+if (nodeEnv === 'production' && (!rawJwtSecret || rawJwtSecret.length < 32)) {
+  throw new Error('JWT_SECRET must be set and at least 32 characters long in production');
+}
+
 export const env = {
   port: Number(process.env.PORT ?? 4000),
-  jwtSecret: process.env.JWT_SECRET ?? 'change-me-in-production',
+  jwtSecret: rawJwtSecret || 'change-me-in-production',
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://postgres:<replace-with-real-password>@127.0.0.1:5432/hanabi',
-  nodeEnv: process.env.NODE_ENV ?? 'development',
+  nodeEnv,
   frontendOrigins,
 };

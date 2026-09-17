@@ -13,13 +13,40 @@ function authHeader(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
 
+// Computes the date of the next upcoming occurrence of the given weekday
+// (0 = Sunday ... 6 = Saturday, matching Date.getUTCDay()), strictly in the
+// future relative to "now". This keeps date-dependent tests from time-bombing:
+// previously hardcoded dates (e.g. '2026-09-07') became stale once that date
+// passed, causing "reject past bookings" validation to intercept these tests
+// before the logic under test ever ran.
+function nextWeekday(dayOfWeek: number): Date {
+  const now = new Date();
+  const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let diff = (dayOfWeek - base.getUTCDay() + 7) % 7;
+  if (diff === 0) diff = 7; // always strictly future, never "today"
+  base.setUTCDate(base.getUTCDate() + diff);
+  return base;
+}
+
+// Business A's availability is configured for dayOfWeek: 1 (Monday), so all
+// "valid" booking tests need to land on the next upcoming Monday.
+const nextMonday = nextWeekday(1);
+const nextMondayStr = nextMonday.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+// The day before (Sunday) is used for the "outside availability" and other
+// deliberately-invalid-day test cases.
+const prevSunday = new Date(nextMonday);
+prevSunday.setUTCDate(prevSunday.getUTCDate() - 1);
+const prevSundayStr = prevSunday.toISOString().slice(0, 10);
+
 describe('Hanabi booking backend', () => {
   beforeAll(async () => {
-    await prisma.user.deleteMany();
     await prisma.appointment.deleteMany();
     await prisma.availability.deleteMany();
     await prisma.staff.deleteMany();
     await prisma.service.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.customer.deleteMany();
     await prisma.business.deleteMany();
 
     const businessA = await prisma.business.create({
@@ -111,8 +138,8 @@ describe('Hanabi booking backend', () => {
         customerName: 'Existing Customer',
         customerEmail: 'existing@example.com',
         customerPhone: '+15550000003',
-        startAt: new Date('2026-09-07T10:00:00Z'),
-        endAt: new Date('2026-09-07T10:30:00Z'),
+        startAt: new Date(`${nextMondayStr}T10:00:00Z`),
+        endAt: new Date(`${nextMondayStr}T10:30:00Z`),
         bookingReference: 'REF-EXISTING-1',
         status: 'CONFIRMED',
       },
@@ -126,8 +153,8 @@ describe('Hanabi booking backend', () => {
         customerName: 'Other Customer',
         customerEmail: 'other@example.com',
         customerPhone: '+15550000004',
-        startAt: new Date('2026-09-07T10:00:00Z'),
-        endAt: new Date('2026-09-07T10:30:00Z'),
+        startAt: new Date(`${nextMondayStr}T10:00:00Z`),
+        endAt: new Date(`${nextMondayStr}T10:30:00Z`),
         bookingReference: 'REF-B-1',
         status: 'CONFIRMED',
       },
@@ -204,7 +231,7 @@ describe('Hanabi booking backend', () => {
         customerName: 'Customer A',
         customerEmail: 'customerA@example.com',
         customerPhone: '+15550000005',
-        startAt: '2026-09-06T08:00:00Z',
+        startAt: `${prevSundayStr}T08:00:00Z`,
         timezone: 'UTC',
       });
 
@@ -255,7 +282,7 @@ describe('Hanabi booking backend', () => {
         customerName: 'Customer C',
         customerEmail: 'customerC@example.com',
         customerPhone: '+15550000007',
-        startAt: '2026-09-06T10:00:00Z',
+        startAt: `${prevSundayStr}T10:00:00Z`,
         timezone: 'UTC',
       });
 
@@ -291,7 +318,7 @@ describe('Hanabi booking backend', () => {
         customerName: 'Customer D',
         customerEmail: 'customerD@example.com',
         customerPhone: '+15550000009',
-        startAt: '2026-09-06T10:00:00Z',
+        startAt: `${prevSundayStr}T10:00:00Z`,
         timezone: 'UTC',
       });
 
@@ -312,7 +339,7 @@ describe('Hanabi booking backend', () => {
         customerName: 'Double Booking Customer',
         customerEmail: 'double@example.com',
         customerPhone: '+15550000010',
-        startAt: '2026-09-07T10:00:00Z',
+        startAt: `${nextMondayStr}T10:00:00Z`,
         timezone: 'UTC',
       });
 
@@ -333,7 +360,7 @@ describe('Hanabi booking backend', () => {
         customerName: 'Overlap Customer',
         customerEmail: 'overlap@example.com',
         customerPhone: '+15550000011',
-        startAt: '2026-09-07T10:15:00Z',
+        startAt: `${nextMondayStr}T10:15:00Z`,
         timezone: 'UTC',
       });
 
@@ -353,8 +380,8 @@ describe('Hanabi booking backend', () => {
         customerName: 'Cancelled Customer',
         customerEmail: 'cancelled@example.com',
         customerPhone: '+15550000012',
-        startAt: new Date('2026-09-07T11:00:00Z'),
-        endAt: new Date('2026-09-07T11:30:00Z'),
+        startAt: new Date(`${nextMondayStr}T11:00:00Z`),
+        endAt: new Date(`${nextMondayStr}T11:30:00Z`),
         bookingReference: 'REF-CANCELLED-1',
         status: 'CANCELLED',
       },
@@ -374,7 +401,7 @@ describe('Hanabi booking backend', () => {
         customerName: 'Next Customer',
         customerEmail: 'next@example.com',
         customerPhone: '+15550000013',
-        startAt: '2026-09-07T11:00:00Z',
+        startAt: `${nextMondayStr}T11:00:00Z`,
         timezone: 'UTC',
       });
 
@@ -389,7 +416,7 @@ describe('Hanabi booking backend', () => {
     const [catalog, services, slots] = await Promise.all([
       request(app).get(`/api/public/businesses/${business!.id}`),
       request(app).get(`/api/public/businesses/${business!.id}/services`),
-      request(app).get(`/api/public/businesses/${business!.id}/services/${service!.id}/slots?date=2026-09-07&staffId=${staff!.id}`),
+      request(app).get(`/api/public/businesses/${business!.id}/services/${service!.id}/slots?date=${nextMondayStr}&staffId=${staff!.id}`),
     ]);
 
     expect(catalog.status).toBe(200);
@@ -397,7 +424,7 @@ describe('Hanabi booking backend', () => {
     expect(services.status).toBe(200);
     expect(services.body.services[0]).not.toHaveProperty('status');
     expect(slots.status).toBe(200);
-    expect(slots.body.slots).not.toContain('2026-09-07T10:00:00.000Z');
+    expect(slots.body.slots).not.toContain(`${nextMondayStr}T10:00:00.000Z`);
   });
 
   it('should require customer email ownership for public booking lookup and cancellation', async () => {

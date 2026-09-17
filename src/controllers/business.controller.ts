@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { businessCreateSchema, businessStatusSchema } from '../validation/schemas.js';
+import { businessCreateSchema, businessStatusSchema, businessProfileUpdateSchema } from '../validation/schemas.js';
 import * as businessService from '../services/business.service.js';
 import { sendError, sendSuccess } from '../utils/api.js';
 
@@ -86,7 +86,13 @@ export async function updateBusinessProfileController(req: Request, res: Respons
       return;
     }
 
-    const business = await businessService.updateBusinessProfile(req.user.businessId, req.body);
+    const parsed = businessProfileUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendError(res, 400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Invalid business profile payload');
+      return;
+    }
+
+    const business = await businessService.updateBusinessProfile(req.user.businessId, parsed.data);
     sendSuccess(res, 200, { business });
   } catch (error) {
     next(error);

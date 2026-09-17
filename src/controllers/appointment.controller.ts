@@ -11,7 +11,10 @@ export async function listAppointmentsController(req: Request, res: Response, ne
       sendError(res, 403, 'FORBIDDEN', 'Business access required');
       return;
     }
-    const appointments = await appointmentService.listAppointmentsForBusiness(businessId);
+    
+    const { from, to, status } = req.query as { from?: string; to?: string; status?: any };
+    
+    const appointments = await appointmentService.listAppointmentsForBusiness(businessId, { from, to, status });
     sendSuccess(res, 200, { appointments });
   } catch (error) {
     next(error);
